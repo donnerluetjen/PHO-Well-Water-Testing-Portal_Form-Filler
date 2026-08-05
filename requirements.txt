@@ -1,0 +1,10 @@
+# Required
+playwright
+python-dotenv
+
+# Optional -- webcam barcode scanning (falls back to manual entry if absent)
+opencv-python
+zxing-cpp
+
+# Optional -- running the unit tests
+pytest
