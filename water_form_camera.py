@@ -19,6 +19,7 @@ barcode-reading part is at fault.
 from __future__ import annotations
 
 import datetime as dt
+import sys
 from typing import Optional, Tuple
 
 from water_form_logic import stable_reading
@@ -27,8 +28,10 @@ try:
     import cv2
     import zxingcpp
     CAMERA_AVAILABLE = True
-except ImportError:
+    _IMPORT_ERROR = None
+except ImportError as exc:
     CAMERA_AVAILABLE = False
+    _IMPORT_ERROR = exc
 
 REQUIRED_STABLE_READS = 3  # consecutive identical reads before accepting
 WINDOW_NAME = "Barcode scanner -- point at the sample barcode (ESC/q to type it instead)"
@@ -44,7 +47,9 @@ def scan_barcode() -> Optional[Tuple[str, dt.datetime]]:
     libraries aren't available, no camera is found, or the user presses
     ESC/q to cancel (caller should fall back to manual entry)."""
     if not CAMERA_AVAILABLE:
-        print("  (camera scanning not set up -- pip install opencv-python zxing-cpp to enable it)")
+        print(f"  (camera scanning not set up -- {_IMPORT_ERROR})")
+        print(f"  (this Python interpreter is: {sys.executable})")
+        print("  (pip install opencv-python zxing-cpp into *that* interpreter to enable it)")
         return None
 
     cap = cv2.VideoCapture(0)

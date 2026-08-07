@@ -5,15 +5,22 @@ No browser / network needed.
 import datetime as dt
 
 import pytest
+from cryptography.fernet import Fernet
 
 from water_form_logic import (
+    TRIGGER_SUBJECT_PREFIX,
     confirm_match,
+    format_trigger_email,
     prompt_barcode,
     prompt_date_collected,
     prompt_time_collected,
     stable_reading,
     validate_barcode,
 )
+
+# Fresh key per test run -- format_trigger_email()/parse_trigger_email()
+# just need *a* valid Fernet key, not this specific one.
+TEST_KEY = Fernet.generate_key().decode()
 
 
 # --- validate_barcode ---------------------------------------------------
@@ -125,3 +132,55 @@ def test_stable_reading_only_looks_at_most_recent_readings():
     # recent `required_count` readings agree.
     readings = ["11111111", "22222222", "22222222", "22222222"]
     assert stable_reading(readings, required_count=3) == "22222222"
+
+
+# --- format_trigger_email (result-fetcher intake trigger) ------------------
+# Mirrored by parse_trigger_email() in
+# docker_result-fetcher/water_result_logic.py -- the two files aren't
+# importable across that boundary (different machines), so this only
+# checks the shape this side produces, not an actual round-trip through
+# the other module.
+#
+# Deliberately does NOT include last_name: it doesn't change between
+# samples, so instead of emailing it every time, the result-fetcher side
+# keeps its own fixed copy (RESULT_LAST_NAME in
+# docker_result-fetcher/.env) -- one less
+# piece of personal data traveling through a mailbox. The subject is
+# also just the bare prefix, not "prefix + barcode", so that even a
+# glance at the inbox list (or a phone's notification preview) doesn't
+# show which barcode/property a message is about.
+#
+# The body is symmetrically encrypted (Fernet) with a shared key both
+# machines hold -- so barcode + submitted_at aren't readable in plain
+# text to anyone with mailbox access, or to the mail provider's own
+# automated scanning.
+
+def test_format_trigger_email_subject_is_bare_prefix():
+    subject, _ = format_trigger_email("123456789", "2026-08-05T14:30:00", TEST_KEY)
+    assert subject == TRIGGER_SUBJECT_PREFIX
+    assert "123456789" not in subject
+
+
+def test_format_trigger_email_body_is_encrypted_not_plaintext():
+    _, body = format_trigger_email("123456789", "2026-08-05T14:30:00", TEST_KEY)
+    assert "123456789" not in body
+    assert "barcode" not in body.lower()
+    assert "2026-08-05" not in body
+
+
+def test_format_trigger_email_body_decrypts_to_barcode_and_timestamp_only():
+    _, body = format_trigger_email("123456789", "2026-08-05T14:30:00", TEST_KEY)
+    plaintext = Fernet(TEST_KEY.encode()).decrypt(body.encode()).decode()
+    lines = plaintext.splitlines()
+    assert "barcode: 123456789" in lines
+    assert "submitted_at: 2026-08-05T14:30:00" in lines
+    assert not any(line.lower().startswith("last_name") for line in lines)
+
+
+def test_format_trigger_email_uses_a_fresh_token_each_time():
+    # Fernet tokens include random data, so the same input encrypted
+    # twice must not produce identical ciphertext (a basic sanity check
+    # that we're not accidentally doing something deterministic/unsafe).
+    _, body1 = format_trigger_email("123456789", "2026-08-05T14:30:00", TEST_KEY)
+    _, body2 = format_trigger_email("123456789", "2026-08-05T14:30:00", TEST_KEY)
+    assert body1 != body2

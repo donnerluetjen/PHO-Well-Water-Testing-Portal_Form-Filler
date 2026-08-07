@@ -1,5 +1,10 @@
-# Personal data -- never commit this
+# Personal data -- never commit this. Matches both ./.env (form filler)
+# and docker_result-fetcher/.env (fetcher secrets), since gitignore
+# patterns without a leading slash match at any depth.
 .env
+
+# Result-fetcher runtime data (pending samples, downloaded PDFs)
+data/
 
 # Python
 __pycache__/
@@ -8,6 +13,8 @@ __pycache__/
 .venv/
 venv/
 *.egg-info/
+
+# PyCharm
 .idea/
 
 # OS/editor cruft

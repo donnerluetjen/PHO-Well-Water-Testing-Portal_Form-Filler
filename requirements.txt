@@ -1,10 +1,17 @@
+# For water_form_filler.py, run on your own machine.
+# For the result-fetcher container, see docker_result-fetcher/requirements.txt.
+
 # Required
 playwright
 python-dotenv
+cryptography  # encrypts the trigger email body -- see TRIGGER_ENCRYPTION_KEY
 
 # Optional -- webcam barcode scanning (falls back to manual entry if absent)
 opencv-python
 zxing-cpp
+
+# Note: emailing the result-fetcher's trigger inbox after submit uses
+# only the stdlib (smtplib) for sending -- no extra package for that part.
 
 # Optional -- running the unit tests
 pytest

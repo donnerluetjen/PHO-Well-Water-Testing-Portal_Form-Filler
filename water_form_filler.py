@@ -28,6 +28,17 @@ What it does:
     3. Stops. It does NOT tick the "I agree to the Terms and Conditions"
        box and does NOT click Submit -- you review the filled form
        yourself and submit it manually if everything looks right.
+    4. Asks whether you submitted it. If yes, and TRIGGER_EMAIL_TO is set
+       in .env, emails a "sample submitted" notice to that address --
+       just the barcode and a timestamp, deliberately not your name or
+       address, since the result-fetcher already has your (fixed) last
+       name configured locally (see RESULT_LAST_NAME in
+       docker_result-fetcher/.env.example). The result-fetcher
+       (docker_result-fetcher/water_result_fetcher.py, a plain Docker
+       container -- runs on any Docker host) reads that inbox via IMAP
+       -- no inbound port/webhook needed at all, so this works from
+       anywhere, not just your home network. See the Part 2 setup
+       section in the repo's README.md.
 
 This version was written against the live page's actual DOM (inspected
 directly, id by id -- not guessed from rendered text), so it targets
@@ -65,13 +76,16 @@ Playwright actually saw, which is the fastest way to fix the selector.
 """
 from __future__ import annotations
 
+import datetime as dt
+import smtplib
 import sys
+from email.message import EmailMessage
 
 from playwright.sync_api import Page, sync_playwright
 
 import water_form_config as cfg
 from water_form_camera import scan_barcode
-from water_form_logic import prompt_barcode, prompt_date_collected, prompt_time_collected
+from water_form_logic import format_trigger_email, prompt_barcode, prompt_date_collected, prompt_time_collected
 
 FORM_URL = "https://www.publichealthontario.ca/laboratory-services/well-water-testing/portal?tab=0"
 
@@ -242,6 +256,55 @@ def fill_form(page: Page, barcode: str, date_iso: str, time_hm: str) -> None:
     _select_dropdown(page, "health-unit", cfg.PUBLIC_HEALTH_UNIT)
 
 
+def notify_result_fetcher(barcode: str) -> None:
+    """Tell the result-fetcher (if configured) that this sample was
+    just submitted, by emailing its dedicated trigger inbox -- it reads
+    that inbox via IMAP (an outbound connection it initiates), so
+    nothing on that side needs to be reachable from the internet, and
+    this works from any network your machine happens to be on, not just
+    home. Best-effort: an email hiccup here shouldn't be treated as a
+    failure of the form filling itself, which already succeeded.
+
+    The submitted_at timestamp is UTC, not local time: this machine and
+    the one running water_result_fetcher.py can easily be in different
+    timezones (that's not hypothetical -- it happened), and comparing
+    naive local timestamps across that boundary silently gives a wrong
+    answer for the overdue check rather than an obvious error. Note
+    this is unrelated to the barcode's collection date/time, which
+    stays in local time on the form itself since that's genuinely when
+    and where the sample was collected.
+
+    The trigger body is encrypted (see format_trigger_email()) using
+    TRIGGER_ENCRYPTION_KEY -- required here, not optional, so a
+    misconfigured .env fails loudly (a warning, not a crash) rather
+    than silently falling back to sending the barcode/timestamp in
+    plain text."""
+    if not cfg.TRIGGER_EMAIL_TO:
+        return
+    missing = [n for n in ("SMTP_HOST", "SMTP_USERNAME", "SMTP_PASSWORD", "TRIGGER_ENCRYPTION_KEY") if not getattr(cfg, n)]
+    if missing:
+        print(f"  [WARNING] TRIGGER_EMAIL_TO is set but {', '.join(missing)} missing in .env -- couldn't send the trigger email.")
+        return
+
+    try:
+        subject, body = format_trigger_email(
+            barcode, dt.datetime.now(dt.timezone.utc).isoformat(), cfg.TRIGGER_ENCRYPTION_KEY
+        )
+        msg = EmailMessage()
+        msg["Subject"] = subject
+        msg["From"] = cfg.SMTP_FROM
+        msg["To"] = cfg.TRIGGER_EMAIL_TO
+        msg.set_content(body)
+
+        with smtplib.SMTP(cfg.SMTP_HOST, cfg.SMTP_PORT) as smtp:
+            smtp.starttls()
+            smtp.login(cfg.SMTP_USERNAME, cfg.SMTP_PASSWORD)
+            smtp.send_message(msg)
+        print(f"Emailed a trigger to {cfg.TRIGGER_EMAIL_TO} -- the result-fetcher will pick it up on its next scheduled check.")
+    except Exception as exc:  # noqa: BLE001
+        print(f"  [WARNING] Could not send the trigger email to {cfg.TRIGGER_EMAIL_TO}: {exc}")
+
+
 def main() -> None:
     missing = [f for f in cfg.REQUIRED_FIELDS if not getattr(cfg, f, "")]
     if missing:
@@ -274,11 +337,13 @@ def main() -> None:
             "\nDone filling. The form has NOT been submitted.\n"
             "Please review every field yourself, tick the Terms and Conditions\n"
             "checkbox, and click Submit manually if everything is correct.\n"
-            "Any [FAILED] lines above need a manual fix in this browser window.\n"
-            "Press Enter here once you're done (this keeps the browser open)."
+            "Any [FAILED] lines above need a manual fix in this browser window."
         )
-        input()
+        submitted = input("Did you submit the form? [y/N]: ").strip().lower().startswith("y")
         browser.close()
+
+    if submitted:
+        notify_result_fetcher(barcode)
 
 
 if __name__ == "__main__":

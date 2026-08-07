@@ -81,6 +81,31 @@ WATER_POSTAL_CODE = _str("WATER_POSTAL_CODE")
 # "City of Toronto", "Middlesex-London", etc.
 PUBLIC_HEALTH_UNIT = _str("PUBLIC_HEALTH_UNIT")
 
+# --- Result-fetcher trigger email (optional) ---------------------------
+# If TRIGGER_EMAIL_TO is set, water_form_filler.py emails it once you
+# confirm you've submitted the form, so
+# docker_result-fetcher/water_result_fetcher.py (which reads that inbox
+# via IMAP -- see docker_result-fetcher/.env.example) knows to
+# start checking for that sample's result. No inbound port/webhook
+# needed on that side this way. Leave TRIGGER_EMAIL_TO empty to skip
+# this entirely -- the form filler works fine without it.
+#
+# This uses its own SMTP account to *send* the trigger email -- can be
+# any account you have (Gmail with an app password, your ISP's mail,
+# etc.), separate from the dedicated inbox TRIGGER_EMAIL_TO points at.
+SMTP_HOST = _str("SMTP_HOST")
+SMTP_PORT = int(_str("SMTP_PORT", "587") or "587")
+SMTP_USERNAME = _str("SMTP_USERNAME")
+SMTP_PASSWORD = _str("SMTP_PASSWORD")
+SMTP_FROM = _str("SMTP_FROM") or SMTP_USERNAME
+TRIGGER_EMAIL_TO = _str("TRIGGER_EMAIL_TO")  # the dedicated trigger inbox's address
+
+# Shared secret that encrypts the trigger email's body (barcode +
+# timestamp) so it isn't plain text in the mailbox. Must exactly match
+# TRIGGER_ENCRYPTION_KEY in docker_result-fetcher/.env. Generate one with:
+#   python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+TRIGGER_ENCRYPTION_KEY = _str("TRIGGER_ENCRYPTION_KEY")
+
 # Fields that must be non-empty before water_form_filler.py will run.
 REQUIRED_FIELDS = (
     "LAST_NAME",

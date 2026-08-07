@@ -1,0 +1,6 @@
+# For water_result_fetcher.py, run inside the Docker container. See
+# Dockerfile.
+# Note: the IMAP trigger intake uses only the stdlib (imaplib, email) --
+# no extra package needed for that part.
+playwright
+cryptography  # decrypts the trigger email body -- see TRIGGER_ENCRYPTION_KEY

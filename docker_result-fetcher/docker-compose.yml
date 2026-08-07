@@ -1,0 +1,12 @@
+services:
+  water-tester:
+    build: .
+    container_name: water-tester
+    env_file: .env
+    volumes:
+      - ./data:/data  # pending_samples.json + downloaded PDFs, survives container restarts
+    # No "ports:" and no "restart: unless-stopped" -- there's nothing
+    # listening. This container only runs when a scheduler (DSM's Task
+    # Scheduler, cron, etc.) or you, manually, invokes it via:
+    #   docker compose run --rm water-tester
+    # and exits when the check is done.
